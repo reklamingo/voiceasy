@@ -33,16 +33,12 @@ workflows:
         script: |
           set -e
           keychain initialize
+          # CLI bazı sürümlerde argüman kabul etmiyor → ENV ile veriyoruz
+          export BUNDLE_ID="$APP_ID"
           # App Store (Distribution)
-          app-store-connect fetch-signing-files \
-            --type IOS_APP_STORE \
-            --identifier "$APP_ID" \
-            --create
+          app-store-connect fetch-signing-files --type IOS_APP_STORE --create
           # Development (Debug için)
-          app-store-connect fetch-signing-files \
-            --type IOS_APP_DEVELOPMENT \
-            --identifier "$APP_ID" \
-            --create
+          app-store-connect fetch-signing-files --type IOS_APP_DEVELOPMENT --create
           keychain add-certificates
           xcode-project use-profiles
 
@@ -83,10 +79,10 @@ workflows:
 
       - name: Publish to App Store Connect
         script: |
-          # CLI anahtarları ENV'den alır
+          # CLI anahtarları ENV'den okur; path + bundle id yeter
+          export BUNDLE_ID="$APP_ID"
           app-store-connect publish \
-            --path "$CM_BUILD_DIR/Build/ipa/App.ipa" \
-            --bundle-id "$APP_ID"
+            --path "$CM_BUILD_DIR/Build/ipa/App.ipa"
 
     artifacts:
       - Build/ipa/*.ipa
