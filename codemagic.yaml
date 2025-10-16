@@ -56,7 +56,6 @@ workflows:
 
       - name: Fetch signing files (auto from App Store Connect)
         script: |
-          # Gerekli env kontrolü
           for v in APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_IDENTIFIER APP_STORE_CONNECT_PRIVATE_KEY BUNDLE_ID; do
             if [ -z "${!v}" ]; then
               echo "ERROR: $v boş. Codemagic > Environment variables / group 'app_store_connect' kontrol edin."
@@ -90,13 +89,13 @@ workflows:
       - name: Apply provisioning profiles
         script: |
           cd ios/App
-          # --warn-only değersiz flag; proje yolunu açık veriyoruz
-          xcode-project use-profiles --project . --archive-method app-store --warn-only
+          xcode-project use-profiles --project . --warn-only
 
       - name: Build .ipa
         script: |
           cd ios/App
-          # Workspace varsa onu kullan, yoksa xcodeproj
+
+          # Workspace varsa onunla, yoksa xcodeproj ile derle
           if [ -d "App.xcworkspace" ]; then
             WS_OPT='--workspace App.xcworkspace'
             echo "Using workspace App.xcworkspace"
@@ -105,19 +104,21 @@ workflows:
             echo "Workspace yok, project ile derleniyor"
           fi
 
+          # Not: signing/profil önceki adımlarda ayarlandı; burada sade komut yeterli
           xcode-project build-ipa \
             $WS_OPT \
             --scheme "$SCHEME" \
-            --archive-method app-store \
-            --team-id "$APPLE_TEAM_ID" \
-            --bundle-id "$BUNDLE_ID"
+            --config Release
 
       - name: Upload to App Store Connect (no auto-submit)
         script: |
           # IPA'yı otomatik bul
-          IPA_PATH="$(find ios -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
+          IPA_PATH="$(find . -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
           if [ -z "$IPA_PATH" ]; then
-            IPA_PATH="$(find . -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
+            IPA_PATH="$(find .. -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
+          fi
+          if [ -z "$IPA_PATH" ]; then
+            IPA_PATH="$(find ../../ -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
           fi
           if [ -z "$IPA_PATH" ]; then
             echo "IPA bulunamadı, build çıktısını kontrol edin."; exit 1
