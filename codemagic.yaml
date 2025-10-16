@@ -64,21 +64,35 @@ workflows:
             fi
           done
 
-          # Sertifika için RSA private key üret (bazı CLI sürümleri bunu istiyor)
+          # Sertifika için RSA private key (p12 oluştururken kullanacağız)
           openssl genrsa -out certificate_private_key.pem 2048
 
-          # Bazı sürümlerde bundle id pozisyonel argüman olmalı:
+          # Bazı CLI sürümlerinde bundle id pozisyonel argüman
+          # P12'yi PAROLASIZ üretmek için --p12-password "" veriyoruz
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
             --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
             --create \
-            --certificate-key @file:certificate_private_key.pem
+            --certificate-key @file:certificate_private_key.pem \
+            --p12-password ""
 
       - name: Add certificates to keychain
         script: |
-          keychain add-certificates
+          KEYCHAIN_PATH="$HOME/Library/Keychains/login.keychain-db"
+
+          # Keychain kilidini aç (Codemagic login keychain genelde boş parolalıdır)
+          security unlock-keychain -p "" "$KEYCHAIN_PATH" || true
+
+          # Tüm p12'leri parolasız import et ve codesign/security erişimi ver
+          for P12 in "$HOME/Library/MobileDevice/Certificates"/*.p12; do
+            echo "Importing $P12"
+            security import "$P12" -k "$KEYCHAIN_PATH" -P "" -T /usr/bin/codesign -T /usr/bin/security
+          done
+
+          # codesign erişimi için partition list ayarı
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH" || true
 
       - name: Apply provisioning profiles
         script: |
