@@ -1,18 +1,6 @@
 workflows:
   capacitor_ios_release:
-    name: Voiceasy iOS (Capacitor) – Release
-    max_build_duration: 60
-    instance_type: mac_mini_m1
-
-    environment:
-      xcode: 15.4
-      node: 20.11.1
-      vars:
-        BUNDLE_ID: com.voiceasy.app
-        APPLE_TEAM_ID: 377ECJLA2T
-        SCHEME: App
-      # APP_STORE_CONNECT_ISSUER_ID / KEY_IDENTIFIER / PRIVATE_KEY -> Env Vars'ta
-
+    # ... (üst kısım aynı)
     scripts:
       - name: Install dependencies
         script: |
@@ -31,8 +19,26 @@ workflows:
             echo "package.json'da build script yok, atlanıyor"
           fi
 
+      # ⬇⬇⬇ YENİ ADIM
+      - name: Ensure iOS platform exists (Capacitor)
+        script: |
+          # Capacitor iOS platform paketi yüklü mü?
+          if ! npm ls @capacitor/ios --depth=0 >/dev/null 2>&1; then
+            npm install @capacitor/ios --save-exact
+          fi
+
+          # ios klasörü yoksa ekle, varsa atla
+          if [ ! -d "ios" ]; then
+            echo "Capacitor iOS platformu ekleniyor..."
+            npx cap add ios --skip-deps
+          else
+            echo "iOS platformu zaten var, devam."
+          fi
+
       - name: Capacitor sync (iOS project)
         script: |
+          # config’te appId doğru mu? (gerekirse ayarla)
+          npx cap config set appId com.voiceasy.app appName "Voiceasy"
           npx cap sync ios
 
       - name: Install CocoaPods
