@@ -1,0 +1,68 @@
+workflows:
+  capacitor_ios_release:
+    name: Voiceasy iOS (Capacitor) – Release
+    environment:
+      vars:
+        APP_ID: "com.voiceasy.app"
+        APP_NAME: "Voiceasy"
+        APPLE_TEAM_ID: "377ECJLA2T" # your Apple Team ID; change if needed
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+      groups:
+        # Create these secure variables in Codemagic UI:
+        # - APP_STORE_CONNECT_KEY_IDENTIFIER (Key ID)
+        # - APP_STORE_CONNECT_ISSUER_ID (Issuer ID)
+        # - APP_STORE_CONNECT_PRIVATE_KEY (paste .p8 file content)
+        # - APPLE_ID (your Apple login email - optional)
+        # - APP_SPECIFIC_PASSWORD (only if using Apple ID upload - not needed with API key)
+        - app_store_connect
+      ios_signing:
+        # Automatic code signing with App Store Connect API key
+        provisioning_profiles:
+          - bundle_identifier: "$APP_ID"
+            type: "IOS_APP_STORE"
+    triggering:
+      events:
+        - manual
+    scripts:
+      - name: Install Node + deps
+        script: |
+          node -v || true
+          npm ci || npm install
+      - name: Add & sync iOS platform
+        script: |
+          npx cap add ios || true
+          npx cap sync ios
+          # Ensure correct bundle identifier in Xcode project
+          npx cap run ios --list || true
+      - name: CocoaPods install
+        script: |
+          cd ios/App
+          pod install
+      - name: Xcode build (archive)
+        script: |
+          xcodebuild -workspace "$XCODE_WORKSPACE"             -scheme "$XCODE_SCHEME"             -configuration Release             -archivePath "$CM_BUILD_DIR/Build/App.xcarchive"             clean archive CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+      - name: Export IPA
+        script: |
+          xcodebuild -exportArchive             -archivePath "$CM_BUILD_DIR/Build/App.xcarchive"             -exportPath "$CM_BUILD_DIR/Build/ipa"             -exportOptionsPlist <(cat <<'PLIST'
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>method</key><string>app-store</string>
+              <key>uploadBitcode</key><false/>
+              <key>compileBitcode</key><true/>
+              <key>signingStyle</key><string>automatic</string>
+              <key>destination</key><string>export</string>
+              <key>stripSwiftSymbols</key><true/>
+            </dict>
+            </plist>
+            PLIST
+          )
+      - name: Publish to App Store Connect
+        script: |
+          xcrun altool --version || true
+          app-store-connect publish             --apiKeyId "$APP_STORE_CONNECT_KEY_IDENTIFIER"             --issuerId "$APP_STORE_CONNECT_ISSUER_ID"             --privateKey "$APP_STORE_CONNECT_PRIVATE_KEY"             --path "$CM_BUILD_DIR/Build/ipa/App.ipa"             --bundleId "$APP_ID"
+    artifacts:
+      - Build/ipa/*.ipa
+      - ios/App/*.dSYM.zip
