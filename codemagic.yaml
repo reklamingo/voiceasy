@@ -1,91 +1,84 @@
 workflows:
   capacitor_ios_release:
     name: Voiceasy iOS (Capacitor) – Release
+    max_build_duration: 60
     instance_type: mac_mini_m1
 
     environment:
-      groups:
-        - app_store_connect   # APP_STORE_CONNECT_KEY_IDENTIFIER / APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_PRIVATE_KEY
+      xcode: 15.4
+      cocoapods: default
+      node: 20.11.1
       vars:
-        APP_ID: "com.voiceasy.app"
-        APP_NAME: "Voiceasy"
-        APPLE_TEAM_ID: "377ECJLA2T"
-        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
-        XCODE_SCHEME: "App"
+        BUNDLE_ID: com.voiceasy.app
+        APPLE_TEAM_ID: 377ECJLA2T
+        SCHEME: App
+      # Şunları Codemagic UI > Environment variables bölümünde GİZLİ olarak ekle:
+      # APP_STORE_CONNECT_ISSUER_ID = 69a6de8d-7077-47e3-e053-5b8c7c11a4d1
+      # APP_STORE_CONNECT_KEY_IDENTIFIER = WV26CFHL7P
+      # APP_STORE_CONNECT_PRIVATE_KEY = ( .p8 dosyasının TAM içeriği, BEGIN/END dahil )
+
+    triggering:
+      events:
+        - manual
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
 
     scripts:
-      - name: Install Node & dependencies
+      - name: Install dependencies
         script: |
-          node -v || true
-          npm ci || npm install
+          npm ci
 
-      - name: Capacitor iOS sync
+      - name: Capacitor sync (iOS project)
         script: |
-          npx cap add ios || true
           npx cap sync ios
 
-      - name: CocoaPods install
+      - name: Install CocoaPods
         script: |
-          cd ios/App
+          cd ios
           pod install --repo-update
 
-      - name: Fetch signing files (App Store + Development)
+      - name: Fetch signing files (auto from App Store Connect)
         script: |
-          set -e
-          keychain initialize
-          # Bu CLI sürümünde bundle id POZİSYONEL argüman olarak verilir:
           app-store-connect fetch-signing-files \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
-            --create \
-            "$APP_ID"
-          app-store-connect fetch-signing-files \
-            --type IOS_APP_DEVELOPMENT \
-            --create \
-            "$APP_ID"
+            --bundle-id "$BUNDLE_ID" \
+            --create
+
+      - name: Add certificates to keychain
+        script: |
           keychain add-certificates
-          xcode-project use-profiles
 
-      - name: Xcode archive (Release)
+      - name: Apply provisioning profiles
         script: |
-          xcodebuild \
-            -workspace "$XCODE_WORKSPACE" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release \
-            -archivePath "$CM_BUILD_DIR/Build/App.xcarchive" \
-            clean archive \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic \
-            -allowProvisioningUpdates
+          xcode-project use-profiles --warn-only=false
 
-      - name: Create exportOptions.plist
+      - name: Build .ipa
         script: |
-          cat > "$CM_BUILD_DIR/exportOptions.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key><string>app-store</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>stripSwiftSymbols</key><true/>
-            <key>compileBitcode</key><true/>
-            <key>destination</key><string>export</string>
-          </dict>
-          </plist>
-          PLIST
+          cd ios
+          xcode-project build-ipa \
+            --workspace "$(ls -1 *.xcworkspace | head -n 1)" \
+            --scheme "$SCHEME" \
+            --archive-method app-store \
+            --team-id "$APPLE_TEAM_ID" \
+            --bundle-id "$BUNDLE_ID"
+        artifacts:
+          - build/ios/ipa/*.ipa
+          - ~/Library/Developer/Xcode/Archives/**/*.xcarchive
 
-      - name: Export IPA
+      - name: Upload to App Store Connect (no auto-submit)
         script: |
-          xcodebuild -exportArchive \
-            -archivePath "$CM_BUILD_DIR/Build/App.xcarchive" \
-            -exportOptionsPlist "$CM_BUILD_DIR/exportOptions.plist" \
-            -exportPath "$CM_BUILD_DIR/Build/ipa"
-
-      - name: Publish to App Store Connect
-        script: |
-          # API anahtarlarını ENV'den okur; path yeterli
           app-store-connect publish \
-            --path "$CM_BUILD_DIR/Build/ipa/App.ipa"
+            --path "$(ls -1 build/ios/ipa/*.ipa | head -n 1)" \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            --submit-for-review=false
 
     artifacts:
-      - Build/ipa/*.ipa
-      - ios/App/*.dSYM.zip
+      - build/ios/ipa/*.ipa
+      - ~/Library/Developer/Xcode/Archives/**/*.xcarchive
