@@ -56,6 +56,7 @@ workflows:
 
       - name: Fetch signing files (auto from App Store Connect)
         script: |
+          # Gerekli env kontrolü
           for v in APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_IDENTIFIER APP_STORE_CONNECT_PRIVATE_KEY BUNDLE_ID; do
             if [ -z "${!v}" ]; then
               echo "ERROR: $v boş. Codemagic > Environment variables / group 'app_store_connect' kontrol edin."
@@ -66,7 +67,7 @@ workflows:
           # Sertifika için RSA private key (p12 üretimi için)
           openssl genrsa -out certificate_private_key.pem 2048
 
-          # P12'yi PAROLASIZ üret
+          # P12'yi parolasız üret
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
@@ -89,14 +90,23 @@ workflows:
       - name: Apply provisioning profiles
         script: |
           cd ios/App
-          # --warn-only flag'ı değer almaz; proje yolunu da açıkça veriyoruz
+          # --warn-only değersiz flag; proje yolunu açık veriyoruz
           xcode-project use-profiles --project . --archive-method app-store --warn-only
 
       - name: Build .ipa
         script: |
           cd ios/App
+          # Workspace varsa onu kullan, yoksa xcodeproj
+          if [ -d "App.xcworkspace" ]; then
+            WS_OPT='--workspace App.xcworkspace'
+            echo "Using workspace App.xcworkspace"
+          else
+            WS_OPT='--project App.xcodeproj'
+            echo "Workspace yok, project ile derleniyor"
+          fi
+
           xcode-project build-ipa \
-            --workspace "$(ls -1 *.xcworkspace | head -n 1)" \
+            $WS_OPT \
             --scheme "$SCHEME" \
             --archive-method app-store \
             --team-id "$APPLE_TEAM_ID" \
@@ -104,13 +114,24 @@ workflows:
 
       - name: Upload to App Store Connect (no auto-submit)
         script: |
+          # IPA'yı otomatik bul
+          IPA_PATH="$(find ios -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
+          if [ -z "$IPA_PATH" ]; then
+            IPA_PATH="$(find . -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
+          fi
+          if [ -z "$IPA_PATH" ]; then
+            echo "IPA bulunamadı, build çıktısını kontrol edin."; exit 1
+          fi
+          echo "Uploading IPA: $IPA_PATH"
+
           app-store-connect publish \
-            --path "$(ls -1 build/ios/ipa/*.ipa | head -n 1)" \
+            --path "$IPA_PATH" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
             --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --submit-for-review=false
 
     artifacts:
+      - ios/App/build/ios/ipa/*.ipa
       - build/ios/ipa/*.ipa
       - ~/Library/Developer/Xcode/Archives/**/*.xcarchive
