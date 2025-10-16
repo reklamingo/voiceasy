@@ -34,11 +34,9 @@ workflows:
 
       - name: Ensure iOS platform exists (Capacitor)
         script: |
-          # @capacitor/ios paketi yoksa ekle
           if ! npm ls @capacitor/ios --depth=0 >/dev/null 2>&1; then
             npm install @capacitor/ios --save-exact
           fi
-          # ios klasörü yoksa iOS platformunu ekle
           if [ ! -d "ios" ]; then
             echo "Capacitor iOS platformu ekleniyor..."
             npx cap add ios
@@ -48,7 +46,6 @@ workflows:
 
       - name: Capacitor sync (iOS project)
         script: |
-          # Güvenli olsun diye appId/appName’i set edelim
           npx cap config set appId com.voiceasy.app appName "Voiceasy"
           npx cap sync ios
 
@@ -59,20 +56,25 @@ workflows:
 
       - name: Fetch signing files (auto from App Store Connect)
         script: |
-          # Gerekli env var mı?
+          # Gerekli env kontrolü
           for v in APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_IDENTIFIER APP_STORE_CONNECT_PRIVATE_KEY BUNDLE_ID; do
             if [ -z "${!v}" ]; then
               echo "ERROR: $v boş. Codemagic > Environment variables / group 'app_store_connect' kontrol edin."
               exit 1
             fi
           done
+
+          # Sertifika için RSA private key üret (bazı CLI sürümleri bunu istiyor)
+          openssl genrsa -out certificate_private_key.pem 2048
+
           # Bazı sürümlerde bundle id pozisyonel argüman olmalı:
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
             --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
-            --create
+            --create \
+            --certificate-key @file:certificate_private_key.pem
 
       - name: Add certificates to keychain
         script: |
