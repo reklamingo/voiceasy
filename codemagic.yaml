@@ -6,7 +6,6 @@ workflows:
 
     environment:
       xcode: 15.4
-      cocoapods: default
       node: 20.11.1
       vars:
         BUNDLE_ID: com.voiceasy.app
@@ -17,13 +16,14 @@ workflows:
       # APP_STORE_CONNECT_KEY_IDENTIFIER = WV26CFHL7P
       # APP_STORE_CONNECT_PRIVATE_KEY = ( .p8 dosyasının TAM içeriği, BEGIN/END dahil )
 
-    triggering:
-      events:
-        - manual
-      branch_patterns:
-        - pattern: main
-          include: true
-          source: true
+    # İstersen push ile tetiklemek için uncomment et:
+    # triggering:
+    #   events:
+    #     - push
+    #   branch_patterns:
+    #     - pattern: main
+    #       include: true
+    #       source: true
 
     scripts:
       - name: Install dependencies
@@ -66,9 +66,6 @@ workflows:
             --archive-method app-store \
             --team-id "$APPLE_TEAM_ID" \
             --bundle-id "$BUNDLE_ID"
-        artifacts:
-          - build/ios/ipa/*.ipa
-          - ~/Library/Developer/Xcode/Archives/**/*.xcarchive
 
       - name: Upload to App Store Connect (no auto-submit)
         script: |
