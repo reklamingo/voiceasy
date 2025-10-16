@@ -35,22 +35,22 @@ workflows:
           keychain initialize
           # 1) App Store (Distribution) profile & certificate
           app-store-connect fetch-signing-files \
-            --apiKeyId "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --issuerId "$APP_STORE_CONNECT_ISSUER_ID" \
-            --privateKey "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
             --bundle-id "$APP_ID" \
             --create
-          # 2) Development profile & certificate (Debug/eşleştirme için)
+          # 2) Development profile & certificate (Debug/eşleşme için)
           app-store-connect fetch-signing-files \
-            --apiKeyId "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --issuerId "$APP_STORE_CONNECT_ISSUER_ID" \
-            --privateKey "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_DEVELOPMENT \
             --bundle-id "$APP_ID" \
             --create
           keychain add-certificates
-          # Profilleri projeye uygula (Debug -> Development, Release -> App Store)
+          # Profilleri Xcode projesine uygula (Debug -> Development, Release -> App Store)
           xcode-project use-profiles
 
       - name: Xcode archive (Release)
@@ -91,11 +91,11 @@ workflows:
       - name: Publish to App Store Connect
         script: |
           app-store-connect publish \
-            --apiKeyId "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --issuerId "$APP_STORE_CONNECT_ISSUER_ID" \
-            --privateKey "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --path "$CM_BUILD_DIR/Build/ipa/App.ipa" \
-            --bundleId "$APP_ID"
+            --bundle-id "$APP_ID"
 
     artifacts:
       - Build/ipa/*.ipa
