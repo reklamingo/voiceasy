@@ -12,7 +12,7 @@ workflows:
         APPLE_TEAM_ID: 377ECJLA2T
         SCHEME: App
       groups:
-        - app_store_connect   # APP_STORE_CONNECT_* değişkenleri bu grupta
+        - app_store_connect
 
     scripts:
       - name: Install dependencies
@@ -62,11 +62,7 @@ workflows:
               exit 1
             fi
           done
-
-          # Sertifika için RSA private key (p12 üretimi için)
           openssl genrsa -out certificate_private_key.pem 2048
-
-          # P12'yi parolasız üret
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
@@ -89,13 +85,21 @@ workflows:
       - name: Apply provisioning profiles
         script: |
           cd ios/App
-          xcode-project use-profiles --project . --warn-only
+          # En yeni App Store profili al (fetch adımı az önce indirdi)
+          PROFILE_PATH="$(ls -t ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -n 1)"
+          if [ -z "$PROFILE_PATH" ]; then
+            echo "Provisioning profile bulunamadı"; exit 1
+          fi
+          echo "Using provisioning profile: $PROFILE_PATH"
+          # Profili projeye uygula (explicit profile path veriyoruz)
+          xcode-project use-profiles --project . --profile "$PROFILE_PATH" --warn-only
+          # Xcode build için profile adını çıkar (specifier)
+          PP_SPECIFIER="$(basename "$PROFILE_PATH" .mobileprovision)"
+          echo "PP_SPECIFIER=$PP_SPECIFIER" >> $CM_ENV
 
       - name: Build .ipa
         script: |
           cd ios/App
-
-          # Workspace varsa onunla, yoksa xcodeproj ile derle
           if [ -d "App.xcworkspace" ]; then
             WS_OPT='--workspace App.xcworkspace'
             echo "Using workspace App.xcworkspace"
@@ -103,16 +107,15 @@ workflows:
             WS_OPT='--project App.xcodeproj'
             echo "Workspace yok, project ile derleniyor"
           fi
-
-          # Not: signing/profil önceki adımlarda ayarlandı; burada sade komut yeterli
+          # xcargs ile team ve profile specifier ver
           xcode-project build-ipa \
             $WS_OPT \
             --scheme "$SCHEME" \
-            --config Release
+            --config Release \
+            --archive-xcargs "DEVELOPMENT_TEAM=$APPLE_TEAM_ID PROVISIONING_PROFILE_SPECIFIER=$PP_SPECIFIER CODE_SIGN_STYLE=Manual"
 
       - name: Upload to App Store Connect (no auto-submit)
         script: |
-          # IPA'yı otomatik bul
           IPA_PATH="$(find . -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
           if [ -z "$IPA_PATH" ]; then
             IPA_PATH="$(find .. -type f -name '*.ipa' -o -name '*.IPA' | head -n 1)"
@@ -124,7 +127,6 @@ workflows:
             echo "IPA bulunamadı, build çıktısını kontrol edin."; exit 1
           fi
           echo "Uploading IPA: $IPA_PATH"
-
           app-store-connect publish \
             --path "$IPA_PATH" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
