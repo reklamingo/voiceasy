@@ -4,42 +4,36 @@ workflows:
     instance_type: mac_mini_m1
 
     environment:
+      groups:
+        - app_store_connect   # APP_STORE_CONNECT_KEY_IDENTIFIER / APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_PRIVATE_KEY
       vars:
         APP_ID: "com.voiceasy.app"
         APP_NAME: "Voiceasy"
-        APPLE_TEAM_ID: "377ECJLA2T" # your Apple Team ID; change if needed
+        APPLE_TEAM_ID: "377ECJLA2T"
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
-      groups:
-        # Create these secure variables in Codemagic UI:
-        # - APP_STORE_CONNECT_KEY_IDENTIFIER (Key ID)
-        # - APP_STORE_CONNECT_ISSUER_ID (Issuer ID)
-        # - APP_STORE_CONNECT_PRIVATE_KEY (paste .p8 file content)
-        # - APPLE_ID (optional)
-        # - APP_SPECIFIC_PASSWORD (optional)
-        - app_store_connect
 
     scripts:
-      - name: Install Node + deps
+      - name: Install Node & dependencies
         script: |
           node -v || true
           npm ci || npm install
 
-      - name: Add & sync iOS platform
+      - name: Capacitor iOS sync
         script: |
           npx cap add ios || true
           npx cap sync ios
-          # Ensure correct bundle identifier in Xcode project
-          npx cap run ios --list || true
 
       - name: CocoaPods install
         script: |
           cd ios/App
           pod install --repo-update
 
-      - name: Fetch & apply signing (with App Store Connect API key)
+      - name: Fetch signing files (App Store + Development)
         script: |
+          set -e
           keychain initialize
+          # 1) App Store (Distribution) profile & certificate
           app-store-connect fetch-signing-files \
             --apiKeyId "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
             --issuerId "$APP_STORE_CONNECT_ISSUER_ID" \
@@ -47,17 +41,29 @@ workflows:
             --type IOS_APP_STORE \
             --bundle-id "$APP_ID" \
             --create
+          # 2) Development profile & certificate (Debug/eşleştirme için)
+          app-store-connect fetch-signing-files \
+            --apiKeyId "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --issuerId "$APP_STORE_CONNECT_ISSUER_ID" \
+            --privateKey "$APP_STORE_CONNECT_PRIVATE_KEY" \
+            --type IOS_APP_DEVELOPMENT \
+            --bundle-id "$APP_ID" \
+            --create
           keychain add-certificates
+          # Profilleri projeye uygula (Debug -> Development, Release -> App Store)
           xcode-project use-profiles
 
-      - name: Xcode build (archive)
+      - name: Xcode archive (Release)
         script: |
-          xcodebuild -workspace "$XCODE_WORKSPACE" \
-                     -scheme "$XCODE_SCHEME" \
-                     -configuration Release \
-                     -archivePath "$CM_BUILD_DIR/Build/App.xcarchive" \
-                     clean archive \
-                     DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+          xcodebuild \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath "$CM_BUILD_DIR/Build/App.xcarchive" \
+            clean archive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates
 
       - name: Create exportOptions.plist
         script: |
@@ -67,7 +73,7 @@ workflows:
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store</string>
-            <key>signingStyle</key><string>manual</string>
+            <key>signingStyle</key><string>automatic</string>
             <key>stripSwiftSymbols</key><true/>
             <key>compileBitcode</key><true/>
             <key>destination</key><string>export</string>
@@ -78,9 +84,9 @@ workflows:
       - name: Export IPA
         script: |
           xcodebuild -exportArchive \
-                     -archivePath "$CM_BUILD_DIR/Build/App.xcarchive" \
-                     -exportOptionsPlist "$CM_BUILD_DIR/exportOptions.plist" \
-                     -exportPath "$CM_BUILD_DIR/Build/ipa"
+            -archivePath "$CM_BUILD_DIR/Build/App.xcarchive" \
+            -exportOptionsPlist "$CM_BUILD_DIR/exportOptions.plist" \
+            -exportPath "$CM_BUILD_DIR/Build/ipa"
 
       - name: Publish to App Store Connect
         script: |
