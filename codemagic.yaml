@@ -33,24 +33,16 @@ workflows:
         script: |
           set -e
           keychain initialize
-          # 1) App Store (Distribution) profile & certificate
+          # ENV'den okur: APP_STORE_CONNECT_KEY_IDENTIFIER / APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_PRIVATE_KEY
           app-store-connect fetch-signing-files \
-            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
-            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
             --bundle-id "$APP_ID" \
             --create
-          # 2) Development profile & certificate (Debug/eşleşme için)
           app-store-connect fetch-signing-files \
-            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
-            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_DEVELOPMENT \
             --bundle-id "$APP_ID" \
             --create
           keychain add-certificates
-          # Profilleri Xcode projesine uygula (Debug -> Development, Release -> App Store)
           xcode-project use-profiles
 
       - name: Xcode archive (Release)
@@ -90,10 +82,8 @@ workflows:
 
       - name: Publish to App Store Connect
         script: |
+          # CLI anahtarları ENV'den alır
           app-store-connect publish \
-            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
-            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --path "$CM_BUILD_DIR/Build/ipa/App.ipa" \
             --bundle-id "$APP_ID"
 
