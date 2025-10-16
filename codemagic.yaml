@@ -33,14 +33,15 @@ workflows:
         script: |
           set -e
           keychain initialize
-          # ENV'den okur: APP_STORE_CONNECT_KEY_IDENTIFIER / APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_PRIVATE_KEY
+          # App Store (Distribution)
           app-store-connect fetch-signing-files \
             --type IOS_APP_STORE \
-            --bundle-id "$APP_ID" \
+            --identifier "$APP_ID" \
             --create
+          # Development (Debug için)
           app-store-connect fetch-signing-files \
             --type IOS_APP_DEVELOPMENT \
-            --bundle-id "$APP_ID" \
+            --identifier "$APP_ID" \
             --create
           keychain add-certificates
           xcode-project use-profiles
