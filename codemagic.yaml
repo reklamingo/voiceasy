@@ -85,21 +85,32 @@ workflows:
       - name: Apply provisioning profiles
         script: |
           cd ios/App
-          # En yeni App Store profili al (fetch adımı az önce indirdi)
           PROFILE_PATH="$(ls -t ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -n 1)"
           if [ -z "$PROFILE_PATH" ]; then
             echo "Provisioning profile bulunamadı"; exit 1
           fi
-          echo "Using provisioning profile: $PROFILE_PATH"
-          # Profili projeye uygula (explicit profile path veriyoruz)
+          echo "Using provisioning profile file: $PROFILE_PATH"
+
+          # Profili projeye uygula (explicit path)
           xcode-project use-profiles --project . --profile "$PROFILE_PATH" --warn-only
-          # Xcode build için profile adını çıkar (specifier)
-          PP_SPECIFIER="$(basename "$PROFILE_PATH" .mobileprovision)"
-          echo "PP_SPECIFIER=$PP_SPECIFIER" >> $CM_ENV
+
+          # .mobileprovision içinden 'Name' alanını (specifier) çıkar
+          TMP_PLIST="$(mktemp)"
+          security cms -D -i "$PROFILE_PATH" > "$TMP_PLIST"
+          PP_SPECIFIER="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$TMP_PLIST" 2>/dev/null || true)"
+          rm -f "$TMP_PLIST"
+
+          if [ -z "$PP_SPECIFIER" ]; then
+            echo "Profil adı (Name) okunamadı, dosya adına düşüyorum."
+            PP_SPECIFIER="$(basename "$PROFILE_PATH" .mobileprovision)"
+          fi
+
+          echo "PP_SPECIFIER=$PP_SPECIFIER" | tee -a $CM_ENV
 
       - name: Build .ipa
         script: |
           cd ios/App
+
           if [ -d "App.xcworkspace" ]; then
             WS_OPT='--workspace App.xcworkspace'
             echo "Using workspace App.xcworkspace"
@@ -107,12 +118,13 @@ workflows:
             WS_OPT='--project App.xcodeproj'
             echo "Workspace yok, project ile derleniyor"
           fi
-          # xcargs ile team ve profile specifier ver
+
+          # Manuel imza: takım, profil adı ve kimliği açık veriyoruz
           xcode-project build-ipa \
             $WS_OPT \
             --scheme "$SCHEME" \
             --config Release \
-            --archive-xcargs "DEVELOPMENT_TEAM=$APPLE_TEAM_ID PROVISIONING_PROFILE_SPECIFIER=$PP_SPECIFIER CODE_SIGN_STYLE=Manual"
+            --archive-xcargs "DEVELOPMENT_TEAM=$APPLE_TEAM_ID PROVISIONING_PROFILE_SPECIFIER=$PP_SPECIFIER CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=Apple\ Distribution"
 
       - name: Upload to App Store Connect (no auto-submit)
         script: |
