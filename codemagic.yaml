@@ -4,16 +4,15 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m1
 
-environment:
-  xcode: 15.4
-  node: 20.11.1
-  vars:
-    BUNDLE_ID: com.voiceasy.app
-    APPLE_TEAM_ID: 377ECJLA2T
-    SCHEME: App
-  groups:
-    - app_store_connect
-
+    environment:
+      xcode: 15.4
+      node: 20.11.1
+      vars:
+        BUNDLE_ID: com.voiceasy.app
+        APPLE_TEAM_ID: 377ECJLA2T
+        SCHEME: App
+      groups:
+        - app_store_connect   # APP_STORE_CONNECT_* değişkenleri bu grupta
 
     scripts:
       - name: Install dependencies
@@ -60,19 +59,28 @@ environment:
 
       - name: Fetch signing files (auto from App Store Connect)
         script: |
-          app-store-connect fetch-signing-files \
+          # Gerekli env var mı?
+          for v in APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_IDENTIFIER APP_STORE_CONNECT_PRIVATE_KEY BUNDLE_ID; do
+            if [ -z "${!v}" ]; then
+              echo "ERROR: $v boş. Codemagic > Environment variables / group 'app_store_connect' kontrol edin."
+              exit 1
+            fi
+          done
+          # Bazı sürümlerde bundle id pozisyonel argüman olmalı:
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
             --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
-            --bundle-id "$BUNDLE_ID" \
             --create
 
       - name: Add certificates to keychain
-        script: keychain add-certificates
+        script: |
+          keychain add-certificates
 
       - name: Apply provisioning profiles
-        script: xcode-project use-profiles --warn-only=false
+        script: |
+          xcode-project use-profiles --warn-only=false
 
       - name: Build .ipa
         script: |
