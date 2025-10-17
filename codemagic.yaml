@@ -96,10 +96,11 @@ workflows:
           # Profili projeye uygula
           xcode-project use-profiles --project . --profile "$PROFILE_PATH" --warn-only
 
-          # .mobileprovision içinden 'Name' (specifier) çıkart
+          # .mobileprovision içinden 'Name' (specifier) ve 'UUID' çek
           TMP_PLIST="$(mktemp)"
           security cms -D -i "$PROFILE_PATH" > "$TMP_PLIST"
           PP_SPECIFIER="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$TMP_PLIST" 2>/dev/null || true)"
+          PP_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$TMP_PLIST" 2>/dev/null || true)"
           rm -f "$TMP_PLIST"
 
           if [ -z "$PP_SPECIFIER" ]; then
@@ -107,7 +108,12 @@ workflows:
             PP_SPECIFIER="$(basename "$PROFILE_PATH" .mobileprovision)"
           fi
 
+          # XCARGS içinde boşluk patlamasın diye tırnaklı değişken de tut
+          PP_SPECIFIER_QUOTED="\"${PP_SPECIFIER}\""
+
           echo "PP_SPECIFIER=$PP_SPECIFIER" | tee -a $CM_ENV
+          echo "PP_UUID=$PP_UUID" | tee -a $CM_ENV
+          echo "PP_SPECIFIER_QUOTED=$PP_SPECIFIER_QUOTED" | tee -a $CM_ENV
 
       - name: Build .ipa
         script: |
@@ -138,12 +144,20 @@ workflows:
           </plist>
           EOF
 
-          # Xcode'a imza parametrelerini net ver, logları detaylı aç
+          # XCARGS'ı tek değişkende oluştur ve boşluklu değerleri tırnakla
+          XCARGS="PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} \
+          DEVELOPMENT_TEAM=${APPLE_TEAM_ID} \
+          CODE_SIGN_STYLE=Manual \
+          CODE_SIGN_IDENTITY='Apple Distribution' \
+          PROVISIONING_PROFILE=${PP_UUID} \
+          PROVISIONING_PROFILE_SPECIFIER=${PP_SPECIFIER_QUOTED}"
+
+          # Derle ve arşivle (ham log açık)
           xcode-project build-ipa \
             $WS_OPT \
             --scheme "$SCHEME" \
             --config Release \
-            --archive-xcargs "PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} DEVELOPMENT_TEAM=${APPLE_TEAM_ID} PROVISIONING_PROFILE_SPECIFIER=${PP_SPECIFIER} CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=Apple\ Distribution" \
+            --archive-xcargs "$XCARGS" \
             --export-options-plist exportOptions.plist \
             --disable-xcpretty \
             --log-stream stderr
