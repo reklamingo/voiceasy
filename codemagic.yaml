@@ -62,7 +62,9 @@ workflows:
               exit 1
             fi
           done
+          # Dağıtım sertifikası için private key oluştur
           openssl genrsa -out certificate_private_key.pem 2048
+          # p12'yi parolasız üret
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
             --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
@@ -80,9 +82,7 @@ workflows:
             echo "Importing $P12"
             security import "$P12" -k "$KEYCHAIN_PATH" -P "" -T /usr/bin/codesign -T /usr/bin/security
           done
-          # codesign araçlarına erişim ver
           security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH" || true
-          # DOĞRULAMA: private key’li kimlik gerçekten geldi mi?
           echo "Available code signing identities:"
           security find-identity -v -p codesigning || true
 
@@ -95,10 +95,14 @@ workflows:
           fi
           echo "Using provisioning profile file: $PROFILE_PATH"
 
-          # Profili projeye uygula (App target'ına yazar)
-          xcode-project use-profiles --project . --profile "$PROFILE_PATH" --warn-only
+          # PROFİLİ DOĞRUDAN PROJEYE YAZ (App target'ı) ve app-store archive modunda uygula
+          xcode-project use-profiles \
+            --project "App.xcodeproj" \
+            --profile "$PROFILE_PATH" \
+            --archive-method app-store \
+            --warn-only
 
-          # .mobileprovision içinden Name ve UUID çek
+          # .mobileprovision -> Name (specifier) ve UUID çek
           TMP_PLIST="$(mktemp)"
           security cms -D -i "$PROFILE_PATH" > "$TMP_PLIST"
           PP_SPECIFIER="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$TMP_PLIST" 2>/dev/null || true)"
@@ -124,7 +128,7 @@ workflows:
             echo "Workspace yok, project ile derleniyor"
           fi
 
-          # Export Options: app-store, manual signing ve profil eşlemesi
+          # Export Options: app-store + manual signing + profil eşlemesi
           cat > exportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -141,8 +145,7 @@ workflows:
           </plist>
           EOF
 
-          # DİKKAT: Profil/kimlik buradan verilmez; sadece App target projeye yazıldı.
-          # Pods hedefleri için Automatic kalsın.
+          # YALNIZ bundle id ve team gönder (profil/kimlik burada zorlanmaz)
           XCARGS="PRODUCT_BUNDLE_IDENTIFIER=${BUNDLE_ID} DEVELOPMENT_TEAM=${APPLE_TEAM_ID}"
 
           xcode-project build-ipa \
